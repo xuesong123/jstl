@@ -1135,7 +1135,7 @@ function SessionContext(timeout){
 SessionContext.prototype.create = function(response){
     if(this.count >= 1000000)
     {
-        // throw {"name": "TooManySessionException", "message": "Too many session be created !"};
+        // throw {"name": "TooManySessionException", "message": "Too many session to be created !"};
     }
 
     var sessionId = [new Date().getTime(), this.index].join("");
