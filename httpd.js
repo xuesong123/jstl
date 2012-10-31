@@ -271,7 +271,6 @@ Httpd.prototype.service = function(request, response){
     var etag = this.getETag(lastModified.getTime());
     var compress = this.config.compress.test(extension);
 
-    response.setHeader("Accept-Ranges", "bytes");
     response.setHeader("Last-Modified", lastModified.toUTCString());
     response.setHeader("ETag", etag);
     response.setHeader("Date", createTime.toUTCString());
