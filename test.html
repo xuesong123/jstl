@@ -1,0 +1,111 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<title>Internet Explorer</title>
+<meta name="copyright" content="Mr.net"/>
+<meta http-equiv="X-UA-Compatible" content="IE=EmulateIE7"/>
+<script type="text/javascript" src="jquery-1.4.2.min.js"></script>
+<script type="text/javascript" src="jstl-1.0.1.js"></script>
+<script type="text/javascript" src="jstl.taglib.js"></script>
+<script type="text/javascript" src="jstl.taglib.core.js"></script>
+<script type="text/javascript" src="jstl.taglib.scrollpage.js"></script>
+<script type="text/javascript">
+<!--
+if(typeof(jQuery) == "undefined")
+{
+    alert("require jquery.js");
+}
+else
+{
+    jQuery(function(){
+
+        var tagLibrary = jsp.runtime.JspRuntime.getTagLibrary();
+
+        if(tagLibrary != null)
+        {
+            tagLibrary.setup({
+                "c": {"scrollpage": "com.mytest.taglib.ScrollPageTag"}
+            });
+        }
+
+        jQuery("#mytext1").val("");
+        jQuery("#mytext2").val("");
+        jQuery("#mytext3").val("");
+
+        var source = null;
+
+        try
+        {
+            source = ResourceManager.getResource("test.jsp");
+        }
+        catch(e)
+        {
+        }
+
+        if(source != null)
+        {
+            jQuery("#mytext1").val(source);
+        }
+
+        var scriptlet = null;
+        var context = {"user": {"name": "tom", "sex": "1", "birthday": new Date()}};
+
+        jQuery("input[name=compile]").click(function(){
+            scriptlet = jsp.runtime.JspRuntime.compile(jQuery("#mytext1").val());
+
+            if(scriptlet.exception == null)
+            {
+                jQuery("#mytext2").val(scriptlet.script);
+            }
+            else
+            {
+                jQuery("#mytext2").val("---------------  compile error ---------------\r\n" + scriptlet.script);
+            }
+        });
+
+        jQuery("input[name=run]").click(function(){
+            if(scriptlet == null)
+            {
+                jQuery("input[name=compile]").click();
+            }
+
+            if(scriptlet.exception != null)
+            {
+                jQuery("#mytext3").val("---------------  compile error ---------------");
+            }
+            else
+            {
+                jQuery("#mytext3").val(scriptlet.execute(context));
+            }
+        });
+
+        jQuery("input[name=test]").click(function(){
+            var source = jQuery("#mytext2").val();
+
+            if(source != null && source.length > 0)
+            {
+                scriptlet = eval("(function(){return " + source + ";})();");
+                scriptlet = jsp.runtime.ScriptletFactory.create(scriptlet);
+                jQuery("#mytext3").val(scriptlet.execute(context));
+            }
+        });
+    });
+};
+
+
+//-->
+</script>
+</head>
+<body>
+<div><textarea id="mytext1" style="width: 800px; height: 200px;"></textarea></div>
+<div><textarea id="mytext2" style="width: 800px; height: 200px;"></textarea></div>
+<div><textarea id="mytext3" style="width: 800px; height: 200px;"></textarea></div>
+<div>
+    <input name="compile" type="button" value=" compile "/>
+    <input name="run" type="button" value=" run "/>
+    <input name="test" type="button" value=" test "/>
+</div>
+<div class="footer"></div>
+</body>
+</html>

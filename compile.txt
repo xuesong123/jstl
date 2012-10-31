@@ -1,0 +1,250 @@
+原文地址: http://blog.csdn.net/xuesong123/article/details/8106278
+
+j2ee规范中对jsp的编译有个规范：第一步，先编译出来一个xml文件, 第二部再从这个xml文件编译为一个java文件
+例如: test.jsp
+    <%!
+        int a = 1;
+        private String sayHello(){return "hello";}
+    %>
+    <%
+        int a = 1;
+    %>
+    <h1>Hello World</h1>
+第一步，先编译为一个xml文件，结果如下
+    <jsp:declare>
+    int a = 1;
+    private String sayHello(){return "hello";}
+    </jsp:declare>
+    <jsp:scriptlet>
+    int a = 1;
+    </jsp:scriptlet>
+    &lt;h1&gt;Hello World&lt;/h1&gt;
+第三步，再编译为一个java文件, 大致结果如下
+    public class _xxx_test{
+        int a = 1;
+        private String sayHello(){return "hello";}
+
+        public void _jspService(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException{
+
+            JspWriter out = xxxx.getWriter();
+
+            int a = 1;
+            out.write("<h1>Hello World</h1>");
+        }
+    }
+
+从中可以看出编译过程, 编译器依次读入文本, 遇到<%@就认为这是个jsp指令, 指令是对编译和执行这个jsp生效的.
+当遇到<%!它的时候就认为这是个声明, 其中的内容会直接生成为类的类属性或者类方法, 这个看里面是怎么写的,
+例如: int a = 1； 就认为这是个类属性.
+
+当遇到<%它的时候就认为这是个脚本, 会被放置到默认的方法里面的.
+
+以上是jsp的编译过程, 还没有说对标签怎么编译, 后面再说.
+
+有个问题, 当编译器遇到<%的时候，会依次读入后续内容直到遇到%>， 如果里面的java代码里面包含了个字符串，这个字符串的内容是%>，怎么办？
+我知道的是像tomcat是不会处理这种情况的，也就是说jsp的编译器并不做语法检查, 只解析字符串, 上面的这种情况编译出来的结果就是错的了，下一步再编译为class
+文件的时候就会报未结束的字符常量. 例如:
+<%
+    String s = "test%>"
+%>
+
+编译出来的结果大致如下:
+    public class _xxx_test{
+        public void _jspService(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException{
+            JspWriter out = xxxx.getWriter();
+            String s = "test
+            out.write("\r\n");
+        }
+    }
+
+j2ee规范还定义了jsp可以使用xml语法编写, 因为jsp是先编译为xml, 其实<%也是先编译成了<jsp:scriptlet>因此下面的两个文件是等效的:
+文件1:
+<%
+    int a = 1;
+%>
+文件2:
+<jsp:scriptlet>int a = 1;</jsp:scriptlet>
+
+不过对于规范，不同的容器在实现的时候并不一定会按照规范来做，我知道的是tomcat是按照这个来做的，并且我记得在tomcat的早期版本中还能在work目录中找到对应的xml文件.
+但是websphere是不支持的，不知道现在的版本支不支持, resin好像也不支持， 也就是说在websphere中, <%必须写成<%, 不能用<jsp:script>
+websphere并没有先编译为xml， 再编译为java
+
+以上的编译过程对于编码来说是很简单的，如果不编译为xml文件，它简单到只用正则就能搞定.
+
+EL表达式
+对于el表达式的支持也很简单, 遇到${, 就开始读入, 直到遇到}, 将其中的内容生成为一个表达式对象, 直接调用该表达式的write方法即可, 例如:
+abc${user.name}123
+
+编译结果大致如下：
+    public class _xxx_test{
+        public void _jspService(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException{
+            JspWriter out = xxxx.getWriter();
+            ExprEnv exprEnv = xxx.create();
+
+            out.write("abc");
+            org.xxx.xxx.Expr _expr_xxx = xxx.createExpr("${user.name}");
+            _expr_xxx.write(out, exprEnv);
+            out.write("123\r\n");
+        }
+    }
+
+不同的容器在实现的时候有所不同, 例如resin, 会将所有的表达式编译为类的静态变量, 以提升性能. 因为一个jsp页面一旦写好, 表达式的数目和内容是确定的，
+因此是可以编译为静态变量的.
+
+为什么要编译为调用表达式的write方法, 而不是编译为out.write(_expr_xxx.getValue()), 我认为其中一个原因是为了表达式做null处理,\
+任何一个表达式如果返回会空, 那么写到页面上都应该是"", 而不应该是"null"
+out.write默认会将null对象转为"null"字符串写入, 如果编译为out.write(_expr_xxx.getValue()),
+就得 out.write((_expr_xxx.getValue() != null ? _expr_xxx.getValue() : ""));
+很显然这样是影响性能的, 因为如果返回结果不为null的话对表达式可能会计算两次.
+如果不这样做，就需要重新定义变量, 为了变量不冲突，每个地方编译器都要生成一个新的变量名, 导致最终生成的文件较大.
+
+tag编译
+对tag的编译略微麻烦，但也不复杂，这需要对源文件做html解析，但是跟一个完整的html解析器比起来，对tag的解析相对来说简单多了
+只需要在遇到'<'字符的时候读出来节点名，然后在当前应用支持的标签库中去查找对应的标签类, 如果没查到，就按照上面的继续编译为out.write("<");
+否则, 读入所有的属性, 创建一个标签实例, 然后根据定义的属性和标签中定义的属性，依次调用对应的setter方法, 例如：
+<c:if test="${user.name == 'tom'}"><h1>a</h1></c:if>
+编译结果大致为:
+    Expr expr_0 = xxx.createExpr("${user.name == 'tom'}");
+    Tag _tag_0 = new xxx.xxx.IfTag();
+
+    _tag_0.setter(...);
+
+    int _tag_flag_0 = _tag_0.doStartTag();
+
+    if(_tag_flag_0 != SKIP_BODY)
+    {
+        while(true)
+        {
+            // doInitBody, doBody等
+            _tag_flag_0 = _tag_0.doEndTag();
+
+            // doAfterBody等
+
+            if(_tag_flag_0 != EVAL_BODY_AGAIN)
+            {
+                break;
+            }
+        }
+    }
+上面是一个标签运行的标准流程, 事实上对于不同的容器，编译结果区别很大，例如resin, 实际编译结果大致如下：
+
+Expr expr_0 = xxx.createExpr("${user.name == 'tom'}");
+
+if(expr_0.getBoolean())
+{
+}
+
+很简单的编译结果, 对于j2ee核心标签库的支持除了forEach编译为了循环之外，其他的一律编译成了很简单的代码，都没有使用循环.
+这一点可能是为了减小编译结果，并且提升性能。
+因为对于大部分标签来说实在没有必要按照标准的tag执行流程来编译, 对于核心标签库中定义的标签因为行为很明确，所以可以简化编译结果.
+tomcat对于标签的编译, 采用的是每个标签都编译为一个方法, 并且采用的是do...while结构. resin则都编译在_jspService方法内.
+
+标签的结束, 在编译标签的过程中，如何知道标签结束了呢？一个很简单的想法是，如果遇到开始标签，就一直读入，直到遇到结束标签，很显然这样是行不通的。
+因为标签有嵌套，如果遇到嵌套标签怎么办？按照上面的流程接着读啊，读到子标签结束, 再然后呢? 稍微懂点数据结构的话，就很容易了，用栈。
+同样的问题，大致的解决思路都是一样的, 比如计算器， 比如html,xml解析器, 都可以这么做， 对于html解析器，我将会写另外一篇文章专门说明.
+先建立一个栈, 当遇到一个标签的时候，就先把它压入栈, 元素内容根据需要自己定义, 我们暂时假定结构如下：
+class TagInfo{
+    String nodeName;                // 节点的名称
+    Map<String, String> attributes; // 节点属性 例如: test: ${user.name == 'tom'}
+    Map<String, String> variables;  // 当前标签可能需要用到的变量列表, 例如 flagName: _flag_0, exprName: expr_0等
+}
+注意是把TagInfo压入栈
+
+当遇到一个结束标签的时候, 取得结束标签的nodeName, 然后从栈弹出一个元素, 如果tagInfo.nodeName == nodeName, 那么生成该标签结束的代码
+对于标签的标准流程来说，只需要生成如下的代码就可以了：
+
+            // out.write("<h1>1</h1>");
+            // 这之前的代码可能都是out.write之类的
+            // _tag_flag_0之类的变量都从tagInfo获取
+            _tag_flag_0 = _tag_0.doEndTag();
+
+            // doAfterBody等
+
+            if(_tag_flag_0 != EVAL_BODY_AGAIN)
+            {
+                break;
+            }
+        }
+    }
+如果当前nodeName != tagInfo.nodeName那么就继续弹, 直到找到一个对应的标签, 其实这种情况只是容错处理, 
+实际上页面最后运行出来的结果跟jsp编写者的预期是不一致的.
+如果一直到栈底都没找到，那就抛异常吧。
+
+对于栈来说，很多时候不需要pop, 只需要查看一下栈顶是否符合要求，符合的时候才pop, 否则先pop, 不符合还得push, 很麻烦
+所以栈最好提供一个peek函数, 传入一个int, 默认是栈顶, 根据参数决定返回当前栈的那个元素, 这样比较方便
+
+最后, 在jsp中，规范规定, 所有以_jsp开头的变量都不能使用, 这是留给API或者容器用的.
+
+上面是对jsp编译过程的一个分析，对于j2ee规范定义的部分，我没有看过原文，是从一些java书上看的一些零散的东西, 更多的是
+看一些容器编译出来的java源文件分析和猜测的，可能很多地方的想法跟j2ee规范定义的不一致，有兴趣的可以在java官网找一下
+规范原文看看。
+
+06年的时候，我曾经用java实现过一套类似于tomcat的容器，当然功能弱多了, 只支持一些基本的功能，能跑jsp和servlet, 不支持el和tag.
+更要命的是当时刚工作，对于一个代码量较大的项目的控制能力很差，写到最后觉得架构上很力不从心，勉勉强强能把jsp和servlet跑起来之后就没有再继续了。
+当时还不了解socket的nio, socket的io用的是阻塞io, 线程也没有用线程池，每次都是new一个新线程，性能很差。
+有兴趣的可以参考我的另外几篇文章，用java实现反向代理, 其中的代码是当年代码中的一部分.
+
+说一说js版的jstl吧
+js版的jstl基本上是按照我上面分析的来实现的， 支持脚本, 支持el, 支持tag, 支持自定义tag.
+为了性能的考虑，对tag的编译借鉴了resin的思路, 对于标准标签不按照标准流程编译, 而是精简编译.
+还是出于性能的考虑，编译过程省略了中间一步，也就是不先编译为xml, 而是直接编译为js源文件.
+因为如果编译过程产生xml, 对于大文件来说就要在内存中再产生一份xml的内容, 然后再次编译为js文件
+中间需要两次编译，耗内存还耗资源.
+
+对el的支持，采用了一个偷懒的方法. 例如abc{user.name}123这样的代码, 在jstl的实现中，需要写成: abc{this.user.name}123
+只要是pageContext中的属性都需要加上this；
+这跟实现有关, 对el如何计算是很麻烦的, 需要写一个解释器, 否则简单的解析对于复杂的表达式就无能为力了.
+例如${user.name}很容易计算出来结果, 但是对于${myfun1(user.name) + myfun2('test') + myfun3('test')}这样的表达式
+或者是%{user.age > 100 * 2}就比较麻烦了, 没有一个解释器基本搞不定.
+我一开始考虑用eval, 但是eval在某些环境中性能较差, 而且编译出来的结果里面如果有很多el就会调用很多次
+更重要的是用eval也无法实现, 例如, eval("user.name + '123'"); 在全局中根本没有user这个对象
+但是如果都加上this, 那么eval就可以了
+
+但是绝对不能用eval, eval的开销太大.
+写个解释器不现实，也没必要，为了支持表达式，用一个解释型的语言再写个解释器，不太划算。
+最后采用了一个折中的办法，就是pageContext中的对象, 在el中都加this, 也就是说el中的所有的this都指向pageContext
+对于每一个表达式都生成一个表达式对象，这点和j2ee中的定义保持一致. 另外会生成一个函数, 例如:
+abc${this.user.name}123
+
+最后的编译结果大致如下：
+new (function(){
+this.handle = function(pageContext){
+    var out = this.getWriter();
+    out.write("abc");
+    this._expr_0.write(out, pageContext);
+    out.write("123");
+})();
+// 这里是编译过程产生的所有的表达式对象
+this._expr_0 = new Expression("_expr_0", "this.user.name");
+
+// 这里记录了编译过程产生的所有的表达式对象的引用
+this.exprPool = [
+    this._expr_0
+];
+// 这个地方对关键，是所有的表达式函数, 目前为null, 在第一次运行的时候才会被编译
+this.exprList = null;
+
+第一次运行的时候，会检查this.exprList是否为空, 如果为空，编译所有的表达式, 编译结果如下：
+this.exprList = new (function(){
+    this._expr_0 = function(){
+        // 最终this._expr_0函数会被放到pageContext中, 这就是为什么要用this的原因
+        return ( this.user.name );
+    }
+})();
+
+this.exprList指向的是一个新的对象, 这里必须是个对象才行。
+下一步，运行期：
+scriptlet.execute(context);
+context由调用者传入, 可以是一个纯粹的json对象. scriptlet.execute方法如下：
+// scriptlet指向了第一次编译返回的对象
+// scriptlet在new的时候创建了execute方法
+scriptlet.execute = function(context){
+    var pageContext = PageContextFactory.create(this, context, this.exprList);
+    this.handle(pageContext);
+};
+
+在PageContextFactory.create方法里面会对context包装， 创建一个新的对象，并把context的所有属性赋给新的pageContext
+然后再把exprList包含的所有的函数赋值给新的pageContext, 这样pageContext就拥有了context的所有属性和scriptlet运行所
+需要的所有的表达式函数, 表达式中的this指向的是pageContext, 这就是el中为什么要用this的原因.
+
+

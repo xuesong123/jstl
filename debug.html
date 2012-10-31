@@ -1,0 +1,171 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<title>Internet Explorer</title>
+<meta name="copyright" content="Mr.net"/>
+<meta http-equiv="X-UA-Compatible" content="IE=EmulateIE7"/>
+<link rel="stylesheet" type="text/css" href="resource/css/tabview.css"/>
+<script type="text/javascript" src="jquery-1.4.2.min.js"></script>
+<script type="text/javascript" src="jstl-1.0.1.js"></script>
+<script type="text/javascript" src="jstl.taglib.js"></script>
+<script type="text/javascript" src="jstl.taglib.core.js"></script>
+<script type="text/javascript" src="jstl.taglib.scrollpage.js"></script>
+<script type="text/javascript">
+<!--
+var MyTest = {};
+
+MyTest.compile = function(){
+    
+};
+
+jQuery(function(){
+    var tagLibrary = jsp.runtime.JspRuntime.getTagLibrary();
+
+    if(tagLibrary != null)
+    {
+        tagLibrary.setup({
+            "c": {"scrollpage": "com.mytest.taglib.ScrollPageTag"}
+        });
+    }
+
+    jQuery("#mytext1").val("");
+    jQuery("#mytext2").val("");
+    jQuery("#mytext3").val("");
+
+    var context = {"user": {"name": "tom", "sex": "1", "birthday": new Date()}};
+
+    var userList = [];
+
+    for(var i = 0; i < 100; i++)
+    {
+        userList.push({"name": "tom" + i, "sex": 1});
+    }
+
+    context.userList = userList;
+
+    jQuery("input[name=compile]").click(function(){
+
+        var t1 = (new Date()).getTime();
+        var scriptlet = jsp.runtime.JspRuntime.compile(jQuery("#mytext1").val());
+        var t2 = (new Date()).getTime();
+
+        if(scriptlet.exception == null)
+        {
+            jQuery("#mytext2").val(scriptlet.script);
+        }
+        else
+        {
+            jQuery("#mytext2").val("---------------  compile error ---------------\r\n" + scriptlet.script);
+        }
+
+        jQuery("#compileTime").val(t2 - t1);
+        jQuery(".tabview .label[tabId=2]").click();
+    });
+
+    jQuery("input[name=run]").click(function(){
+        var t1 = (new Date()).getTime();
+        var scriptlet = jsp.runtime.JspRuntime.compile(jQuery("#mytext1").val());
+        var t2 = (new Date()).getTime();
+
+        if(scriptlet.exception == null)
+        {
+            jQuery(".tabview .label[tabId=3]").click();
+            jQuery("#mytext2").val(scriptlet.script);
+
+            var t3 = (new Date()).getTime();
+            jQuery("#mytext3").val(scriptlet.execute(context));
+            var t4 = (new Date()).getTime();
+            jQuery("#runTime").val(t4 - t3);
+        }
+        else
+        {
+            jQuery(".tabview .label[tabId=2]").click();
+            jQuery("#mytext2").val("---------------  compile error ---------------\r\n" + scriptlet.script);
+        }
+    });
+
+    jQuery("input[name=test]").click(function(){
+        var source = jQuery("#mytext2").val();
+
+        if(source != null && source.length > 0)
+        {
+            jQuery(".tabview .label[tabId=3]").click();
+
+            var t1 = (new Date()).getTime();
+            scriptlet = eval("(function(){return " + source + ";})();");
+            scriptlet = jsp.runtime.ScriptletFactory.create(scriptlet);
+            var t2 = (new Date()).getTime();
+            jQuery("#compileTime").val(t2 - t1);
+
+            var t3 = (new Date()).getTime();
+            jQuery("#mytext3").val(scriptlet.execute(context));
+            var t4 = (new Date()).getTime();
+            jQuery("#runTime").val(t4 - t3);
+        }
+    });
+});
+
+jQuery(function(){
+    jQuery(".tabview .label").click(function(){
+        var tabId = jQuery(this).attr("tabId");
+
+        if(tabId != null)
+        {
+            jQuery(this).parent().find(".label").removeClass("show");
+            jQuery(this).addClass("show");
+
+            var list = jQuery(this).closest(".tabview").find(".panel");
+
+            list.each(function(){
+                if(this.getAttribute("tabId") != null)
+                {
+                    if(this.getAttribute("tabId") == tabId)
+                    {
+                        this.style.display = "block";
+                    }
+                    else
+                    {
+                        this.style.display = "none";
+                    }
+                }
+            });
+        }
+    });
+});
+//-->
+</script>
+</head>
+<body style="background-color: #efefef;">
+
+<div style="width: 980px; margin: 0px auto 0px auto;">
+    <div style="height: 30px; padding-left: 8px; line-height: 30px; border: 1px solid #333333; background-color: #efefef;">
+        <input name="compile" type="button" value=" compile "/>
+        <input name="run" type="button" value=" run "/>
+        <input name="test" type="button" value=" test "/>
+    </div>
+    <div style="height: 20px;"></div>
+
+    <div style="height: 30px; padding-left: 8px; line-height: 30px; border: 1px solid #333333; background-color: #efefef;">
+        compileTime: <input id="compileTime" type="text" style="width: 60px;"/> ms
+        &nbsp;&nbsp;
+        runTime: <input id="runTime" type="text" style="width: 60px;"/> ms
+    </div>
+    <div style="height: 20px;"></div>
+
+    <div class="tabview">
+        <div class="container">
+            <ul>
+                <li class="label show" tabId="1"><span class="head"></span><span class="title">source</span><span class="closeable"></span></li>
+                <li class="label" tabId="2"><span class="head"></span><span class="title">script</span><span class="closeable"></span></li>
+                <li class="label" tabId="3"><span class="head"></span><span class="title">result</span><span class="closeable"></span></li>
+            </ul>
+        </div>
+        <div class="panel show" tabId="1"><textarea id="mytext1" style="width: 976px; height: 400px; border: 0px solid #ffffff;"></textarea></div>
+        <div class="panel hide" tabId="2"><textarea id="mytext2" style="width: 976px; height: 400px; border: 0px solid #ffffff;"></textarea></div>
+        <div class="panel hide" tabId="3"><textarea id="mytext3" style="width: 976px; height: 400px; border: 0px solid #ffffff;"></textarea></div>
+    </div>
+</div>
+<div class="footer"></div>
+</body>
+</html>
