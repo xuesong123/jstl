@@ -716,7 +716,7 @@ function RequestDispatcher(servletChain){
  * @param servletChain
  */
 RequestDispatcher.prototype.forward = function(request, response, servletChain){
-    this.servletChain.doChain(request, response, this);
+    this.servletChain.doChain(request, response);
 };
 
 /**
@@ -1497,6 +1497,9 @@ if(typeof(module) != "undefined")
 }
 
 /**
+ * TODO: parameter support
+ * TODO: servletChain
+
  * Servlet/JSP running
  * 1. WebApplication.dispatch -> getServletChain
  * returns servletChain, jspServlet, defaultServlet
