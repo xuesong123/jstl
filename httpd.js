@@ -462,7 +462,7 @@ Httpd.prototype.getFileName = function(path){
 
         for(; i > -1; i--)
         {
-            c = path.charAt(i);
+            var c = path.charAt(i);
 
             if(c == "/" || c == "\\" || c == ":")
             {

@@ -1497,9 +1497,6 @@ if(typeof(module) != "undefined")
 }
 
 /**
- * TODO: parameter support
- * TODO: servletChain
-
  * Servlet/JSP running
  * 1. WebApplication.dispatch -> getServletChain
  * returns servletChain, jspServlet, defaultServlet
