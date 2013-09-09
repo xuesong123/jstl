@@ -3,7 +3,6 @@ var fs = require("fs");
 var http = require("http");
 var URL = require("url");
 var july = require("./webserver.js");
-var httpd = require("./httpd");
 
 var webApplication = july.WebApplicationFactory.create("localhost", "webapp", "/");
 var servletContext = webApplication.servletContext;

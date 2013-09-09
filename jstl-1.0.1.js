@@ -937,20 +937,6 @@ var com = (function(){
     };
 
     /**
-     * @param position
-     */
-    HtmlStream.prototype.setPosition = function(position){
-        this.position = position;
-    };
-
-    /**
-     * @return int
-     */
-    HtmlStream.prototype.getPosition = function(){
-        return this.position;
-    };
-
-    /**
      * @param cbuf
      * @param offset
      * @param length
@@ -1029,7 +1015,6 @@ var com = (function(){
         }
 
         this.stream.back();
-
         return buffer.join("");
     };
 
