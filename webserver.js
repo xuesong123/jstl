@@ -4,16 +4,19 @@ var path = require("path");
 var http = require("http");
 var httpd = require("./httpd");
 
-function includejs(file)
-{
-    var source = fs.readFileSync(file, "UTF-8");
-    global.eval(source);
-}
-
-includejs("jstl-1.0.1.js");
-includejs("jstl.taglib.js");
-includejs("jstl.taglib.core.js");
-includejs("jstl.taglib.scrollpage.js");
+/**
+ * $RCSfile: StringUtil.js,v $$
+ * $Revision: 1.1 $
+ * $Date: 2012-10-18 $
+ *
+ * Copyright (C) 2008 Skin, Inc. All rights reserved.
+ * This software is the proprietary information of Skin, Inc.
+ * Use is subject to license terms.
+ */
+var StringUtil = {};
+StringUtil.startsWith = function(source, search){
+    return (source.length >= search.length && source.substring(0, search.length) == search)
+};
 
 /**
  * $RCSfile: ArrayUtil.js,v $$
@@ -88,6 +91,96 @@ Parameter.parse = function(query, parameters){
     }
 
     return parameters;
+};
+
+var DateUtil = {};
+
+DateUtil.toString = function(date){
+    if(date == null)
+    {
+        return "";
+    }
+
+    var y = date.getFullYear();
+    var M = date.getMonth() + 1;
+    var d = date.getDate();
+    var h = date.getHours();
+    var m = date.getMinutes();
+    var s = date.getSeconds();
+    var S = date.getTime() % 1000;
+
+    var a = [];
+
+    a[a.length] = y.toString();
+    a[a.length] = "-";
+
+    if(M < 10)
+    {
+        a[a.length] = "0";
+    }
+
+    a[a.length] = M.toString();
+    a[a.length] = "-";
+
+    if(d < 10)
+    {
+        a[a.length] = "0";
+    }
+
+    a[a.length] = d.toString();
+    a[a.length] = " ";
+
+    if(h < 10)
+    {
+        a[a.length] = "0";
+    }
+
+    a[a.length] = h.toString();
+    a[a.length] = ":";
+
+    if(m < 10)
+    {
+        a[a.length] = "0";
+    }
+
+    a[a.length] = m.toString();
+    a[a.length] = ":";
+
+    if(s < 10)
+    {
+        a[a.length] = "0";
+    }
+
+    a[a.length] = s.toString();
+    a[a.length] = " ";
+
+    if(S < 100)
+    {
+        a[a.length] = "0";
+    }
+
+    if(S < 10)
+    {
+        a[a.length] = "0";
+    }
+
+    a[a.length] = S.toString();
+    return a.join("");
+};
+
+var LogUtil = {};
+
+LogUtil.info = function(){
+    var args = [];
+    args.push(DateUtil.toString(new Date()));
+    args.push("-");
+
+    for(var i = 0; i < arguments.length; i++)
+    {
+        args[args.length] = arguments[i];
+    }
+
+    console.log.apply(console, args);
 };
 
 /**
@@ -174,20 +267,58 @@ WebServer.prototype.getWebApplication = function(request){
  * @param response
  */
 WebServer.prototype.dispatch = function(request, response){
-    var url = URL.parse(request.url);
-    request.requestURL = url.path;
-    request.requestURI = url.pathname;
+    var exception = null;
 
-    var webApplication = this.getWebApplication(request);
-
-    if(webApplication != null)
+    try
     {
-        webApplication.dispatch(request, response);
+        var url = URL.parse(request.url);
+        request.requestURL = url.path;
+        request.requestURI = url.pathname;
+
+        var webApplication = this.getWebApplication(request);
+
+        if(webApplication != null)
+        {
+            webApplication.dispatch(request, response);
+        }
+        else
+        {
+            response.statusCode = 404;
+            response.end("<h1 error=\"10001\">Request URL: " + request.requestURL + " not found !</h1>");
+        }
     }
-    else
+    catch(e)
     {
-        response.statusCode = 404;
-        response.end("<h1 error=\"10001\">Request URL: " + request.requestURL + " not found !");
+        exception = e;
+    }
+
+    if(exception != null)
+    {
+        try
+        {
+            response.writeHead(500, "Internal Server Error", {"Content-type": "text/html"});
+            response.end("<h4 error=\"1005001\">" + exception.name + ": " + exception.message + "</h4>");
+            return;
+        }
+        catch(e)
+        {
+            LogUtil.info("Exception: " + e);
+            console.trace();
+        }
+    }
+};
+
+WebServer.prototype.start = function(){
+    for(var i = 0, length = this.hosts.length; i < length; i++)
+    {
+        this.hosts[i].start();
+    }
+};
+
+WebServer.prototype.shutdown = function(){
+    for(var i = 0, length = this.hosts.length; i < length; i++)
+    {
+        this.hosts[i].shutdown();
     }
 };
 
@@ -217,10 +348,22 @@ VistualHost.prototype.add = function(webApplication){
  */
 VistualHost.prototype.getWebApplication = function(request){
     var uri = request.requestURI;
+    var root = null;
 
     for(var i = 0, length = this.applications.length; i < length; i++)
     {
+        if(this.applications[i].path == null || this.applications[i].path == "/")
+        {
+            root = this.applications[i];
+            continue;
+        }
+
         var prefix = this.applications[i].path + "/";
+
+        if(uri == this.applications[i].path)
+        {
+            return this.applications[i];
+        }
 
         if(uri.length >= prefix.length && uri.substring(0, prefix.length) == prefix)
         {
@@ -228,7 +371,47 @@ VistualHost.prototype.getWebApplication = function(request){
         }
     }
 
-    return null;
+    return (root != null ? root : null);
+};
+
+VistualHost.prototype.start = function(){
+    for(var i = 0, length = this.applications.length; i < length; i++)
+    {
+        this.applications[i].start();
+    }
+};
+
+VistualHost.prototype.shutdown = function(){
+    for(var i = 0, length = this.applications.length; i < length; i++)
+    {
+        this.applications[i].shutdown();
+    }
+};
+
+/**
+ * $RCSfile: WebApplicationContext.js,v $$
+ * $Revision: 1.1 $
+ * $Date: 2012-10-18 $
+ *
+ * Copyright (C) 2008 Skin, Inc. All rights reserved.
+ * This software is the proprietary information of Skin, Inc.
+ * Use is subject to license terms.
+ */
+var WebApplicationContext = {id: 1, context: {}};
+
+WebApplicationContext.add = function(webApplication){
+    this.context["_webapp_" + this.id++] = webApplication;
+};
+
+WebApplicationContext.getWebApplications = function(webApplication){
+    var list = [];
+
+    for(var i in this.context)
+    {
+        list.push(this.context[i]);
+    }
+
+    return list;
 };
 
 /**
@@ -251,9 +434,10 @@ WebApplicationFactory.create = function(host, home, path){
     webApplication.sessionContext = sessionContext;
 
     servletContext.webApplication = webApplication;
+    servletContext.sessionContext = sessionContext;
     servletContext.defaultServlet = httpd.create(host, home, path);
     servletContext.jspServlet = new JspServlet();
-
+    WebApplicationContext.add(webApplication);
     return webApplication;
 };
 
@@ -270,6 +454,20 @@ function WebApplication(host, home, path){
     this.host = host;
     this.home = home;
     this.path = path;
+};
+
+WebApplication.prototype.start = function(){
+    if(this.servletContext != null)
+    {
+        this.servletContext.start();
+    }
+};
+
+WebApplication.prototype.shutdown = function(){
+    if(this.servletContext != null)
+    {
+        this.servletContext.shutdown();
+    }
 };
 
 WebApplication.prototype.setHost = function(host){
@@ -311,10 +509,18 @@ WebApplication.prototype.getPath = function(){
     return this.path;
 };
 
+WebApplication.prototype.getWebApplicationContext = function(){
+    return WebApplicationContext;
+};
+
+WebApplication.prototype.getServletContext = function(){
+    return this.servletContext;
+};
+
 WebApplication.prototype.setSessionTimeout = function(timeout){
     if(this.sessionContext != null)
     {
-        this.sessionContext.timeout = timeout;
+        this.sessionContext.setTimeout(timeout);
     }
 };
 
@@ -327,7 +533,13 @@ WebApplication.prototype.getRequest = function(request, response){
     request.response = response;
     response.request = request;
 
+    /**
+     * requestURL: http://localhost/app1/test.jsp
+     * requestURI: /app1/test.jsp
+     * requestURI: ${contextPath}/test.jsp
+     */
     request.attributes = {};
+    request.originalURL = url.path;
     request.requestURL = url.path;
     request.requestURI = url.pathname;
     request.queryString = (url.query || "");
@@ -357,6 +569,17 @@ WebApplication.prototype.getResponse = function(request, response){
         response[i] = HttpServletResponseWrapper[i];
     }
 
+    response._end = response.end;
+
+    response.end = function(){
+        if(this._end != null)
+        {
+            this._end.apply(this, arguments);
+        }
+
+        this._end = function(){};
+    };
+
     return response;
 };
 
@@ -371,15 +594,42 @@ WebApplication.prototype.dispatch = function(req, res){
     /**
      * don't check contextPath
      */
-
     try
     {
+        res.statusCode = 200;
         res.setHeader("Server", "Httpd/1.1");
         res.setHeader("Accept-Ranges", "bytes");
+        res.setHeader("Content-type", "text/html");
+
+        var servletContext = this.getServletContext();
+
+        if(servletContext.running() == false)
+        {
+            res.writeHead(404, "Not Found", {"ContentType": "text/html"});
+            res.end("<h1 error=\"10002\">Request URL: " + req.url + " not found !</h1>");
+            return;
+        }
 
         var request = this.getRequest(req, res);
         var response = this.getResponse(req, res);
         var servletChain = this.servletContext.getServletChain(url.pathname);
+        var requestURI = request.requestURI;
+
+        if(StringUtil.startsWith(requestURI.toUpperCase(), "/WEB-INF"))
+        {
+            response.writeHead(403, "Forbidden", {"Content-Type": "text/plain"});
+            response.end();
+            return;
+        }
+
+        if(StringUtil.startsWith(requestURI.toUpperCase(), "/META-INF"))
+        {
+            response.writeHead(403, "Forbidden", {"Content-Type": "text/plain"});
+            response.end();
+            return;
+        }
+
+        request.setAttribute("servlet_request_dispatcher", "REQUEST");
         this.sessionContext.update(request, response);
 
         if(request.headers["content-type"] == "application/x-www-form-urlencoded")
@@ -420,17 +670,18 @@ WebApplication.prototype.dispatch = function(req, res){
 
     if(exception != null)
     {
-        throw exception;
+        try
+        {
+            response.writeHead(500, "Internal Server Error", {"Content-type": "text/html"});
+            response.end("<h4 error=\"1005002\">" + exception.name + ": " + exception.message + "</h4>");
+            return;
+        }
+        catch(e)
+        {
+            LogUtil.info("Exception: " + e);
+            console.trace();
+        }
     }
-
-    if(exception != null)
-    {
-        response.writeHead(500, "Internal Server Error", {"Content-type": "text/html"});
-        response.end("<h4>" + exception.toString() + "</h4>");
-        return;
-    }
-
-    // response.end();
 };
 
 /**
@@ -441,19 +692,43 @@ WebApplication.prototype.dispatch = function(req, res){
 WebApplication.prototype.execute = function(request, response, servletChain){
     if(servletChain.size() > 0)
     {
-        if(servletChain.hasNext())
+        while(servletChain.hasNext())
         {
+            var flag = false;
             var element = servletChain.next();
-            console.log("servlet.name: " + element.name + " - requestURI: " + request.requestURI);
-            element.servlet.service(request, response, servletChain);
+            var servlet = element.servlet;
+
+            if(servlet.dispatcher == null)
+            {
+                flag = true;
+            }
+            else
+            {
+                var type = request.getAttribute("servlet_request_dispatcher");
+
+                for(var i = 0; i < servlet.dispatcher.length; i++)
+                {
+                    if(type == servlet.dispatcher[i])
+                    {
+                        flag = true;
+                        break;
+                    }
+                }
+            }
+
+            if(flag)
+            {
+                servlet.service(request, response, servletChain);
+                break;
+            }
         }
 
         return 200;
     }
     else
     {
-        response.writeHead(404, "Not Found", {"ContentType": "text/plain"});
-        response.end("<h1 error=\"10003\">Request URL: " + request.url + " not found !");
+        response.writeHead(404, "Not Found", {"ContentType": "text/html"});
+        response.end("<h1 error=\"10002\">Request URL: " + request.url + " not found !</h1>");
         return 404;
     }
 };
@@ -490,6 +765,9 @@ function ServletContext(host, home, path){
     this.host = host;
     this.home = home;
     this.path = path;
+    this.status = 0;
+    this.index = 0;
+    this.watchStatus = 0;
     this.context = {};
 };
 
@@ -570,8 +848,15 @@ ServletContext.prototype.set = function(name, pattern, service){
 
     if(servlet != null)
     {
-        this.context[name] = {"name": name, "pattern": new RegExp(pattern), "servlet": servlet};
+        this.context[name] = {"name": name, "pattern": pattern, "servlet": servlet};
     }
+};
+
+/**
+ * @return WebApplication
+ */
+ServletContext.prototype.getWebApplication = function(){
+    return this.webApplication;
 };
 
 /**
@@ -592,11 +877,10 @@ ServletContext.prototype.getServletChain = function(url){
 
     for(var i in this.context)
     {
-        pattern = this.context[i].pattern;
+        pattern = new RegExp(this.context[i].pattern);
 
         if(pattern.test(url) == true)
         {
-            console.log("url1: " + url);
             list.push(this.context[i]);
         }
     }
@@ -647,11 +931,484 @@ ServletContext.prototype.getRequestDispatcher = function(path){
     return null;
 };
 
+ServletContext.prototype.running = function(){
+    return this.status == 2;
+};
+
 /**
- * TODO: reload
+ * @return sessionContext
+ */
+ServletContext.prototype.getSessionContext = function(){
+    return this.sessionContext;
+};
+
+/**
+ * @param path - absolute path
+ * @return RequestDispatcher
+ */
+ServletContext.prototype.getWebConfig = function(create){
+    if(create == true)
+    {
+        this.webConfig = null;
+    }
+
+    if(this.webConfig == null)
+    {
+        var webjs = this.getRealPath("/WEB-INF/web.js");
+
+        if(fs.existsSync(webjs) == true)
+        {
+            var stats = fs.statSync(webjs);
+
+            if(stats.isFile())
+            {
+                this.webConfig = require(webjs).servletConfig;
+            }
+        }
+    }
+
+    if(this.webConfig == null)
+    {
+        this.webConfig = {};
+    }
+
+    if(this.webConfig.status == null)
+    {
+        this.webConfig.status = 1;
+    }
+
+    if(this.webConfig.servletChain == null)
+    {
+        this.webConfig.servletChain = [];
+    }
+
+    if(this.webConfig.sessionConfig == null)
+    {
+        this.webConfig.sessionConfig = {};
+    }
+
+    if(this.webConfig.sessionConfig.sessionTimeout == null)
+    {
+        this.webConfig.sessionConfig.sessionTimeout = 10 * 60;
+    }
+
+    if(this.webConfig.watchConfig == null)
+    {
+        this.webConfig.watchConfig = {};
+    }
+
+    if(this.webConfig.watchConfig.interval == null)
+    {
+        this.webConfig.watchConfig.interval = 3 * 60;
+    }
+
+    return this.webConfig;
+};
+
+/**
+ * @param path - absolute path
+ * @return RequestDispatcher
+ */
+ServletContext.prototype.getServlets = function(lib, map){
+    if(fs.existsSync(lib) == true)
+    {
+        var list = fs.readdirSync(lib);
+
+        /**
+         * build servlet
+         */
+        for(var i = 0, length = list.length; i < length; i++)
+        {
+            var fileName = list[i];
+            var filePath = path.join(lib, fileName);
+            var stats = fs.statSync(filePath);
+
+            if(stats.isFile())
+            {
+                if(fileName.length >= 3 && fileName.substring(fileName.length - 3).toLowerCase() == ".js")
+                {
+                    var servlets = require(filePath);
+
+                    if(servlets != null)
+                    {
+                        for(var name in servlets)
+                        {
+                            if(map[name] != null)
+                            {
+                                throw new Error("servlet \"" + name + "\ already exists!");
+                            }
+
+                            map[name] = servlets[name];
+                        }
+                    }
+                }
+            }
+            else if(stats.isDirectory())
+            {
+            }
+        }
+    }
+
+    return map;
+};
+
+ServletContext.prototype.load = function(force){
+    if(this.status != 0)
+    {
+        this.destroy();
+    }
+
+    try
+    {
+        this.index++;
+        this.status = 1;
+
+        var map = {};
+        var webConfig = this.getWebConfig(true);
+        var packages = webConfig.packages;
+        var servletChain = webConfig.servletChain;
+
+        if(webConfig.status == 0 && force != true)
+        {
+            this.status = 0;
+            return;
+        }
+
+        var lib = path.join(this.getRealPath("/"), "WEB-INF/module");
+
+        LogUtil.info([
+            "\r\n",
+            "********************************************",
+            "*                                          *",
+            "*           ServletContext.load            *",
+            "*                                          *",
+            "********************************************",
+            "[ServletContext]: " + this.index + " Load ServletContext: " + lib
+        ].join("\r\n"));
+
+        if(packages != null)
+        {
+            for(var i = 0; i < packages.length; i++)
+            {
+                LogUtil.info("[ServletContext]: scan " + path.join(lib, packages[i]));
+                this.getServlets(path.join(lib, packages[i]), map);
+            }
+        }
+
+        /**
+         * init servlet
+         */
+        for(var name in map)
+        {
+            var servlet = map[name];
+
+            if(typeof(servlet) == "object")
+            {
+                if(servlet.init != null)
+                {
+                    servlet.init(this);
+                }
+            }
+        }
+
+        if(servletChain != null)
+        {
+            var c = null;
+            var s = null;
+            for(var i = 0, length = servletChain.length; i < length; i++)
+            {
+                c = servletChain[i];
+                s = map[c.servlet];
+
+                if(s == null)
+                {
+                    throw new Error("servlet \"" + c.servlet + "\ not exists!");
+                }
+
+                this.set("_servlet_" + i, c.pattern, s);
+            }
+        }
+
+        var sessionTimeout = webConfig.sessionConfig.sessionTimeout;
+        this.getSessionContext().setTimeout(sessionTimeout);
+
+        this.watch();
+        this.status = 2;
+        this.webConfig = webConfig;
+        LogUtil.info(this.toString());
+    }
+    catch(e)
+    {
+        LogUtil.info(e);
+        console.trace();
+        this.destroy();
+    }
+};
+
+/**
+ * destroy all servlet
+ */
+ServletContext.prototype.destroy = function(){
+    try
+    {
+        this.status = 3;
+        var lib = path.join(this.getRealPath("/"), "WEB-INF/module");
+        LogUtil.info([
+            "\r\n",
+            "********************************************",
+            "*                                          *",
+            "*          ServletContext.destroy          *",
+            "*                                          *",
+            "********************************************",
+            "[ServletContext]: " + this.index + " Destroy ServletContext: " + lib
+        ].join("\r\n"));
+
+        this.unwatch();
+
+        for(var name in this.context)
+        {
+            var servlet = this.context[name].servlet;
+
+            if(servlet.destroy != null)
+            {
+                servlet.destroy();
+            }
+        }
+
+        var cache = require.cache;
+
+        for(var i in cache)
+        {
+            if(StringUtil.startsWith(i, this.getRealPath("/")))
+            {
+                if(require.cache[i] != null)
+                {
+                    delete require.cache[i];
+                    LogUtil.info("[ServletContext]: DELETE MODUL: " + i);
+                }
+            }
+        }
+
+        FileIterator.each(lib, function(file){
+            var stats = fs.statSync(file);
+
+            if(stats.isFile())
+            {
+                if(require.cache[file] != null)
+                {
+                    delete require.cache[file];
+                    LogUtil.info("[ServletContext]: DELETE MODUL: " + file);
+                }
+            }
+        });
+
+        this.context = {};
+        this.webConfig = null;
+        this.status = 0;
+    }
+    catch(e)
+    {
+        LogUtil.info(e);
+        console.trace();
+    }
+};
+
+ServletContext.prototype.getFileWatchDog = function(){
+    if(this.fileWatchDog == null)
+    {
+        var instance = this;
+        var webjs = this.getRealPath("/WEB-INF/web.js");
+
+        var handler = function(work, list){
+            list.push(webjs);
+
+            FileIterator.each(work, function(file){
+                var stats = fs.statSync(file);
+
+                if(stats.isFile())
+                {
+                    list.push({"file": file, "lastModified": stats.mtime.getTime()});
+                }
+            });
+
+            return list;
+        };
+
+        var listener = function(f1, f2){
+            LogUtil.info("f1: " + f1 + ", f2: " + f2);
+            instance.reload();
+        };
+
+        var webConfig = this.getWebConfig();
+        this.fileWatchDog = new FileWatchDog(this.getRealPath("/WEB-INF/module"), handler, listener);
+        this.fileWatchDog.interval = webConfig.watchConfig.interval * 1000;
+    }
+
+    return this.fileWatchDog;
+};
+
+ServletContext.prototype.watch = function(){
+    this.getFileWatchDog().watch();
+    this.watchStatus = 1;
+};
+
+ServletContext.prototype.unwatch = function(){
+    if(this.watchStatus != 0)
+    {
+        this.getFileWatchDog().unwatch();
+        this.watchStatus = 0;
+    }
+};
+
+/**
+ * reload all servlet
  */
 ServletContext.prototype.reload = function(){
+    this.destroy();
+    this.load(true);
+};
 
+ServletContext.prototype.start = function(){
+    this.load();
+};
+
+ServletContext.prototype.restart = function(){
+    this.reload(true);
+};
+
+ServletContext.prototype.shutdown = function(){
+    this.destroy();
+};
+
+/**
+ * destroy all servlet
+ */
+ServletContext.prototype.toString = function(){
+    var buffer = [];
+    var context = this.context;
+
+    for(var i in context)
+    {
+        var servletConfig = context[i];
+        buffer.push("[ServletContext]: " + servletConfig.name + " - " + servletConfig.pattern);
+    }
+
+    return buffer.join("\r\n");
+};
+
+var FileIterator = {};
+
+FileIterator.each = function(dir, handler){
+    if(fs.existsSync(dir) == false)
+    {
+        return;
+    }
+
+    var flag = handler(dir);
+
+    if(flag == false)
+    {
+        return flag;
+    }
+
+    var stats = fs.statSync(dir);
+
+    if(stats.isFile())
+    {
+        return handler(dir);
+    }
+
+    var list = [];
+    var dirs = [dir];
+
+    for(var i = 0; i < dirs.length; i++)
+    {
+        list = fs.readdirSync(dirs[i]);
+
+        for(var j = 0, length = list.length; j < length; j++)
+        {
+            var filePath = path.join(dirs[i], list[j]);
+            var stats = fs.statSync(filePath);
+
+            if(stats.isDirectory())
+            {
+                dirs.push(filePath);
+            }
+
+            flag = handler(filePath);
+
+            if(flag == false)
+            {
+                return false;
+            }
+        }
+    }
+};
+
+var FileWatchDog = function(home, handler, listener){
+    this.home = home;
+    this.list = [];
+    this.timer = null;
+    this.interval = 3 * 60 * 1000;
+    this.handler = handler;
+    this.listener = listener;
+};
+
+FileWatchDog.prototype.watch = function(){
+    if(this.timer != null)
+    {
+        clearTimeout(this.timer);
+    }
+
+    var list = this.list;
+
+    if(this.list.length < 1)
+    {
+        this.handler(this.home, this.list);
+    }
+    else
+    {
+        var f1 = null;
+        var f2 = null;
+        var temp = [];
+
+        LogUtil.info("[WATCH-DOG]: watch - " + this.home);
+        this.handler(this.home, temp);
+
+        for(var i = 0, length = Math.min(list.length, temp.length); i < length; i++)
+        {
+            if(list[i].file != temp[i].file)
+            {
+                f1 = list[i].file;
+                f2 = temp[i].file;
+                break;
+            }
+
+            if(list[i].lastModified != temp[i].lastModified)
+            {
+                f1 = list[i].file;
+                f2 = temp[i].file;
+                break;
+            }
+        }
+
+        if(f1 != null || list.length != temp.length)
+        {
+            this.list = temp;
+            this.listener(f1, f2);
+        }
+    }
+
+    var instance = this;
+    this.timer = setTimeout(function(){instance.watch()}, this.interval);
+};
+
+FileWatchDog.prototype.unwatch = function(){
+    if(this.timer != null)
+    {
+        clearTimeout(this.timer);
+        this.list.length = 0;
+    }
 };
 
 /**
@@ -715,7 +1472,8 @@ function RequestDispatcher(servletChain){
  * @param response
  * @param servletChain
  */
-RequestDispatcher.prototype.forward = function(request, response, servletChain){
+RequestDispatcher.prototype.forward = function(request, response){
+    request.setAttribute("servlet_request_dispatcher", "FORWARD");
     this.servletChain.doChain(request, response);
 };
 
@@ -812,11 +1570,15 @@ HttpServletRequestWrapper.getRequestDispatcher = function(path){
 
     if(dispatcher != null)
     {
-        this.requestURI = path;
+        var url = URL.parse(path);
+        this.requestURL = url.path;
+        this.requestURI = url.pathname;
+        this.queryString = (url.query || "");
+        this.parameters = Parameter.parse(url.query, this.parameters);
         return dispatcher;
     }
 
-    throw {"name": "BadRequestException", "message": "Request URL '" + path + "' not found !"};;
+    throw new Error("BadRequestException: Request URL '" + path + "' not found !");
 };
 
 /**
@@ -909,7 +1671,7 @@ HttpServletResponseWrapper.getSessionContext = function(){
 HttpServletResponseWrapper.getWriter = function(){
     if(this.writer == null)
     {
-        this.writer = new jsp.runtime.JspWriter();
+        this.writer = new JspWriter();
         this.writer.response = this;
 
         this.writer.write = function(source){
@@ -988,6 +1750,84 @@ HttpServletResponseWrapper.redirect = function(path){
     this.setHeader("Location", path);
     this.writeHead(302, "Moved Temporatily");
     this.end();
+};
+
+/**
+ * $RCSfile: Cookie.js,v $$
+ * $Revision: 1.1 $
+ * $Date: 2012-10-18 $
+ *
+ * Copyright (C) 2008 Skin, Inc. All rights reserved.
+ * This software is the proprietary information of Skin, Inc.
+ * Use is subject to license terms.
+ */
+var JspWriter = function(){
+    this.buffer = [];
+};
+
+/**
+ * @param source
+ */
+JspWriter.prototype.write = function(source){
+    if(source != null && source != undefined){
+        this.buffer.push(source);
+    }
+    else
+    {
+        this.buffer.push("null");
+    }
+};
+
+/**
+ * @param source
+ */
+JspWriter.prototype.print = function(source){this.write(source);};
+
+/**
+ * @param source
+ */
+JspWriter.prototype.println = function(source){this.write(source); this.write("\r\n");};
+
+/**
+ * wrap a new JspWriter
+ * @return BodyContent
+ */
+JspWriter.prototype.pushBody = function(){
+    return null;
+};
+
+/**
+ * unwrap the current JspWriter
+ * @return BodyContent
+ */
+JspWriter.prototype.popBody = function(){
+    return null;
+};
+
+/**
+ * @param source
+ */
+JspWriter.prototype.flush = function(){
+};
+
+/**
+ * close current stream
+ */
+JspWriter.prototype.close = function(){
+};
+
+/**
+ * @return String
+ */
+JspWriter.prototype.getString = function(){
+    return this.buffer.join("");
+};
+
+/**
+ * @return String
+ */
+JspWriter.prototype.toString = function(){
+    return this.buffer.join("");
 };
 
 /**
@@ -1124,7 +1964,7 @@ function SessionContext(timeout){
     this.index = 1;
     this.count = 0;
     this.SESSIONID = "jsessionid";
-    this.timeout = timeout;
+    this.timeout = timeout * 1000;
     this.sessions = {};
 };
 
@@ -1135,11 +1975,11 @@ function SessionContext(timeout){
 SessionContext.prototype.create = function(response){
     if(this.count >= 1000000)
     {
-        // throw {"name": "TooManySessionException", "message": "Too many session to be created !"};
+        throw new Error("TooManySessionException: Too many session to be created !");
     }
 
     var sessionId = [new Date().getTime(), this.index].join("");
-    var expires = new Date().getTime() + this.timeout * 1000;
+    var expires = new Date().getTime() + this.timeout;
     var httpSession = new HttpSession(sessionId);
 
     this.sessions[sessionId] = httpSession;
@@ -1167,7 +2007,7 @@ SessionContext.prototype.update = function(request, response){
     if(session != null)
     {
         session.update();
-        var expires = session.updateTime.getTime() + this.timeout * 1000;
+        var expires = session.updateTime.getTime() + this.timeout;
         response.setCookie({"name": this.SESSIONID, "value": session.sessionId, "path": "/", "expires": expires});
     }
 };
@@ -1199,7 +2039,7 @@ SessionContext.prototype.getSession = function(arg){
 
         if(session != null)
         {
-            if((new Date().getTime() - session.updateTime.getTime()) > this.timeout * 1000)
+            if((new Date().getTime() - session.updateTime.getTime()) > this.timeout)
             {
                 this.count--;
                 this.remove(sessionId);
@@ -1224,7 +2064,7 @@ SessionContext.prototype.remove = function(sessionId){
  * clear SessionContext
  */
 SessionContext.prototype.task = function(){
-    var timeout = this.timeout * 1000;
+    var timeout = this.timeout;
     var timemillis = new Date().getTime();
     var sessions = this.sessions;
     var count = 0;
@@ -1242,6 +2082,13 @@ SessionContext.prototype.task = function(){
     }
 
     this.count = count;
+};
+
+/**
+ * @param timeout
+ */
+SessionContext.prototype.setTimeout = function(timeout){
+    this.timeout = timeout * 1000;
 };
 
 /**
@@ -1264,7 +2111,7 @@ SessionContextFactory.create = function(timeout){
 
     if(timeout == null || isNaN(timeout) || timeout < 1)
     {
-        sessionContext.timeout = 30;
+        sessionContext.setTimeout(10 * 60 * 60);
     }
 
     return sessionContext;
@@ -1333,7 +2180,7 @@ Timer.prototype.run = function(){
 
 /**
  * a abstract class, http 'method' dispatch
- * $RCSfile: DefaultServlet.js,v $$
+ * $RCSfile: HttpServlet.js,v $$
  * $Revision: 1.1 $
  * $Date: 2012-10-18 $
  *
@@ -1380,7 +2227,7 @@ HttpServlet.prototype.service = function(request, response, servletChain){
     else
     {
         response.writeHead(404, "Not Found", {"Content-Type": "text/plain"});
-        response.end("UNKNOWN METHOD: " + method);
+        response.end("<h1 error=\"10003\">UNKNOWN METHOD: " + method + "</h1>");
     }
 };
 
@@ -1429,10 +2276,19 @@ JspServlet.prototype.service = function(request, response, servletChain){
 
     if(this.pattern.test(uri) == false)
     {
-        servletChain.doChain(request, response, servletChain);
+        servletChain.doChain(request, response);
         return;
     }
 
+    this.execute(request, response, servletChain);
+};
+
+/**
+ * require jsp.runtime.JspRuntime
+ * @see https://github.com/xuesong123/jstl
+ */
+JspServlet.prototype.execute = function(request, response, servletChain){
+    var uri = request.requestURI;
     var object = this.context[uri];
     var file = request.getServletContext().getRealPath(uri);
 
@@ -1444,16 +2300,14 @@ JspServlet.prototype.service = function(request, response, servletChain){
         if(object != null && object.timestamp != timestamp)
         {
             object = null;
-            delete this.context[request.requestURI];
+            delete this.context[uri];
         }
 
         if(object == null)
         {
             var source = fs.readFileSync(file, "UTF-8");
             var servlet = jsp.runtime.JspRuntime.compile(source, this.template);
-
-            // this.write(request.getServerHost(), request.requestURI, servlet.script);
-            this.context[request.requestURI] = object = {"servlet": servlet, "timestamp": timestamp};
+            this.context[uri] = object = {"servlet": servlet, "timestamp": timestamp};
         }
     }
 
@@ -1486,6 +2340,51 @@ JspServlet.prototype.write = function(host, requestURI, content){
     fs.writeFileSync("work/" + host + requestURI, content, "UTF-8");
 };
 
+/**
+ * disable *.jsp
+ */
+JspServlet.prototype.service = function(request, response, servletChain){
+    servletChain.doChain(request, response);
+};
+
+var Bootstrap = {};
+
+Bootstrap.create = function(host, home){
+    var webServer = new WebServer();
+    var vistualHost = new VistualHost(host);
+    var root = fs.realpathSync(home);
+
+    if(fs.existsSync(root) == false)
+    {
+        return webServer;
+    }
+
+    var stats = fs.statSync(root);
+
+    if(stats.isFile())
+    {
+        return webServer;
+    }
+
+    var list = fs.readdirSync(root);
+
+    for(var i = 0, length = list.length; i < length; i++)
+    {
+        var dir = list[i];
+        var stats = fs.statSync(path.join(root, dir));
+
+        if(stats.isDirectory())
+        {
+            var app = WebApplicationFactory.create(host, path.join(root, dir), "/" + dir);
+            var servletContext = app.getServletContext();
+            vistualHost.add(app);
+        }
+    }
+
+    webServer.add(vistualHost);
+    return webServer;
+};
+
 if(typeof(module) != "undefined")
 {
     module.exports.WebServer = WebServer;
@@ -1493,7 +2392,9 @@ if(typeof(module) != "undefined")
     module.exports.WebApplicationFactory = WebApplicationFactory;
     module.exports.ServletContextFactory = ServletContextFactory;
     module.exports.SessionContextFactory = SessionContextFactory;
+    module.exports.JspServlet = JspServlet;
     module.exports.Cookie = Cookie;
+    module.exports.Bootstrap = Bootstrap;
 }
 
 /**

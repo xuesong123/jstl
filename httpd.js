@@ -230,20 +230,30 @@ Httpd.prototype.service = function(request, response){
         uri = uri.substring(this.path.length);
     }
 
+    /**
+     * contextPath: /app2
+     * http://localhost/app2
+     * uri: /app2, path: /app2
+     */
+    if(uri == this.path)
+    {
+        uri = "/";
+    }
+
     var homePath = fs.realpathSync(this.home);
     var realPath = path.join(homePath, path.normalize(uri));
 
     if(this.startsWith(realPath, homePath) == false)
     {
-        response.writeHead(403, "Forbidden", {"Content-Type": "text/plain"});
+        response.writeHead(403, "Forbidden", {"Content-Type": "text/html"});
         response.end();
         return;
     }
 
     if(fs.existsSync(realPath) == false)
     {
-        response.writeHead(404, "Not Found", {"Content-Type": "text/plain"});
-        response.end();
+        response.writeHead(404, "Not Found", {"Content-Type": "text/html"});
+        response.end("<h1 error=\"httpd.404\">Request URL: " + request.url + " not found !</h1>");
         return;
     }
 
@@ -251,13 +261,29 @@ Httpd.prototype.service = function(request, response){
 
     if(stats.isDirectory())
     {
-        realPath = path.join(realPath, "index.html");
-        stats = fs.statSync(realPath);
+        var indexList = ["index.htm", "index.html", "default.htm", "default.html"];
+
+        for(var i = 0; i < indexList.length; i++)
+        {
+            var tempPath = path.join(realPath, indexList[i]);
+
+            if(fs.existsSync(tempPath))
+            {
+                stats = fs.statSync(tempPath);
+
+                if(stats.isFile())
+                {
+                    realPath = tempPath;
+                    break;
+                }
+            }
+        }
     }
 
     if(stats.isFile() == false)
     {
-        response.writeHead(404, "Not Found", {"Content-Type": "text/plain"});
+        response.writeHead(404, "Not Found", {"Content-Type": "text/html"});
+        response.end("<h1 error=\"httpd.404\">Request URL: " + request.url + " not found !</h1>");
         response.end();
         return;
     }
